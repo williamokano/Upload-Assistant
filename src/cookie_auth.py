@@ -329,6 +329,35 @@ class CookieAuthUploader:
         self.common = COMMON(config)
         pass
 
+    def _convert_cookiejar_to_httpx(self, cookie_jar):
+        """
+        Convert a MozillaCookieJar to httpx.Cookies object.
+
+        httpx does not properly handle MozillaCookieJar objects when passed
+        to the AsyncClient constructor. This method converts the cookie jar
+        to httpx.Cookies format which httpx can properly send in requests.
+
+        Args:
+            cookie_jar: http.cookiejar.MozillaCookieJar or httpx.Cookies instance
+
+        Returns:
+            httpx.Cookies: Cookies in httpx format
+        """
+        # If already httpx.Cookies, return as-is
+        if isinstance(cookie_jar, httpx.Cookies):
+            return cookie_jar
+
+        # Convert MozillaCookieJar to httpx.Cookies
+        httpx_cookies = httpx.Cookies()
+        for cookie in cookie_jar:
+            httpx_cookies.set(
+                name=cookie.name,
+                value=cookie.value,
+                domain=cookie.domain,
+                path=cookie.path
+            )
+        return httpx_cookies
+
     async def handle_upload(
         self,
         meta,
@@ -398,8 +427,11 @@ class CookieAuthUploader:
 
         else:
             success = False
+            # Convert cookies to httpx.Cookies for proper cookie handling
+            httpx_cookies = self._convert_cookiejar_to_httpx(upload_cookies)
+
             try:
-                async with httpx.AsyncClient(headers=headers, timeout=30.0, cookies=upload_cookies, follow_redirects=True) as session:
+                async with httpx.AsyncClient(headers=headers, timeout=30.0, cookies=httpx_cookies, follow_redirects=True) as session:
                     response = await session.post(upload_url, data=data, files=files)
 
                     if success_text and success_text in response.text:
