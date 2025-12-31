@@ -53,8 +53,41 @@ class ASC:
             'ru': '2', 'zh': '9',
         }
 
+    def _convert_cookiejar_to_httpx(self, cookie_jar):
+        """
+        Convert a MozillaCookieJar to httpx.Cookies object.
+
+        httpx does not properly handle MozillaCookieJar objects when assigned
+        directly to session.cookies. This method converts the cookie jar to
+        httpx.Cookies format which httpx can properly send in requests.
+
+        Args:
+            cookie_jar: http.cookiejar.MozillaCookieJar or httpx.Cookies instance
+
+        Returns:
+            httpx.Cookies: Cookies in httpx format, or False if cookie_jar is False
+        """
+        if not cookie_jar:
+            return False
+
+        # If already httpx.Cookies, return as-is
+        if isinstance(cookie_jar, httpx.Cookies):
+            return cookie_jar
+
+        # Convert MozillaCookieJar to httpx.Cookies
+        httpx_cookies = httpx.Cookies()
+        for cookie in cookie_jar:
+            httpx_cookies.set(
+                name=cookie.name,
+                value=cookie.value,
+                domain=cookie.domain,
+                path=cookie.path
+            )
+        return httpx_cookies
+
     async def validate_credentials(self, meta):
-        self.session.cookies = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+        cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+        self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
         return await self.cookie_validator.cookie_validation(
             meta=meta,
             tracker=self.tracker,
@@ -546,7 +579,8 @@ class ASC:
         }
 
     async def search_existing(self, meta, disctype):
-        self.session.cookies = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+        cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+        self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
 
         found_items = []
         if meta.get('anime'):
@@ -740,7 +774,8 @@ class ASC:
         if not self.config['DEFAULT'].get('search_requests', False) and not meta.get('search_requests', False):
             return False
         else:
-            self.session.cookies = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+            cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+            self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
             try:
                 category = meta['category']
                 if meta.get('anime'):
@@ -847,7 +882,8 @@ class ASC:
         return data
 
     async def upload(self, meta, disctype):
-        self.session.cookies = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+        cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
+        self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
         data = await self.get_data(meta)
         upload_url = await self.get_upload_url(meta)
 
