@@ -427,11 +427,12 @@ class CookieAuthUploader:
 
         else:
             success = False
-            # Convert cookies to httpx.Cookies for proper cookie handling
-            httpx_cookies = self._convert_cookiejar_to_httpx(upload_cookies)
+            # Build Cookie header string manually (httpx doesn't send cookies reliably)
+            cookie_string = '; '.join(f'{cookie.name}={cookie.value}' for cookie in upload_cookies)
+            headers['Cookie'] = cookie_string
 
             try:
-                async with httpx.AsyncClient(headers=headers, timeout=30.0, cookies=httpx_cookies, follow_redirects=True) as session:
+                async with httpx.AsyncClient(headers=headers, timeout=30.0, follow_redirects=True) as session:
                     response = await session.post(upload_url, data=data, files=files)
 
                     if success_text and success_text in response.text:

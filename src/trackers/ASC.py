@@ -53,41 +53,34 @@ class ASC:
             'ru': '2', 'zh': '9',
         }
 
-    def _convert_cookiejar_to_httpx(self, cookie_jar):
+    def _set_cookie_header(self, cookie_jar):
         """
-        Convert a MozillaCookieJar to httpx.Cookies object.
+        Set Cookie header in session from MozillaCookieJar.
 
-        httpx does not properly handle MozillaCookieJar objects when assigned
-        directly to session.cookies. This method converts the cookie jar to
-        httpx.Cookies format which httpx can properly send in requests.
+        httpx does not properly send cookies when MozillaCookieJar objects are
+        assigned to session.cookies. This method manually builds the Cookie header
+        string and sets it in the session headers, which works reliably.
 
         Args:
-            cookie_jar: http.cookiejar.MozillaCookieJar or httpx.Cookies instance
+            cookie_jar: http.cookiejar.MozillaCookieJar instance
 
         Returns:
-            httpx.Cookies: Cookies in httpx format, or False if cookie_jar is False
+            bool: True if cookies were set, False otherwise
         """
         if not cookie_jar:
             return False
 
-        # If already httpx.Cookies, return as-is
-        if isinstance(cookie_jar, httpx.Cookies):
-            return cookie_jar
+        # Build cookie string manually: "name1=value1; name2=value2"
+        cookie_string = '; '.join(f'{cookie.name}={cookie.value}' for cookie in cookie_jar)
 
-        # Convert MozillaCookieJar to httpx.Cookies
-        httpx_cookies = httpx.Cookies()
-        for cookie in cookie_jar:
-            httpx_cookies.set(
-                name=cookie.name,
-                value=cookie.value,
-                domain=cookie.domain,
-                path=cookie.path
-            )
-        return httpx_cookies
+        # Set Cookie header in session
+        self.session.headers['Cookie'] = cookie_string
+
+        return True
 
     async def validate_credentials(self, meta):
         cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
-        self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
+        self._set_cookie_header(cookie_jar)
         return await self.cookie_validator.cookie_validation(
             meta=meta,
             tracker=self.tracker,
@@ -580,7 +573,7 @@ class ASC:
 
     async def search_existing(self, meta, disctype):
         cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
-        self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
+        self._set_cookie_header(cookie_jar)
 
         found_items = []
         if meta.get('anime'):
@@ -775,7 +768,7 @@ class ASC:
             return False
         else:
             cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
-            self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
+            self._set_cookie_header(cookie_jar)
             try:
                 category = meta['category']
                 if meta.get('anime'):
@@ -883,10 +876,11 @@ class ASC:
 
     async def upload(self, meta, disctype):
         cookie_jar = await self.cookie_validator.load_session_cookies(meta, self.tracker)
-        self.session.cookies = self._convert_cookiejar_to_httpx(cookie_jar)
+        self._set_cookie_header(cookie_jar)
         data = await self.get_data(meta)
         upload_url = await self.get_upload_url(meta)
 
+        # Pass cookie_jar to handle_upload so it can build Cookie header
         await self.cookie_auth_uploader.handle_upload(
             meta=meta,
             tracker=self.tracker,
@@ -894,7 +888,7 @@ class ASC:
             torrent_url=self.torrent_url,
             data=data,
             torrent_field_name='torrent',
-            upload_cookies=self.session.cookies,
+            upload_cookies=cookie_jar,
             upload_url=upload_url,
             id_pattern=r'torrents-details\.php\?id=(\d+)',
             success_text="torrents-details.php?id=",
